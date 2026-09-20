@@ -1,0 +1,104 @@
+[
+  {
+    "id": "reactor-output",
+    "name": "Оптимизация производительности реакторов",
+    "description": "Максимизация выхода целевого продукта в системе двух реакторов непрерывного действия",
+    "objective": "alpha*(x**2 + beta*y - mu*volume1)**exponent + alpha1*(beta1*x + y**2 - mu1*volume2)**exponent",
+    "direction": "max",
+    "variables": [
+      {
+        "name": "x",
+        "display_name": "A₁",
+        "unit": "м³/ч",
+        "min": 1,
+        "max": 10
+      },
+      {
+        "name": "y",
+        "display_name": "A₂",
+        "unit": "м³/ч",
+        "min": 1,
+        "max": 10
+      }
+    ],
+    "coefficients": {
+      "alpha": 1,
+      "alpha1": 1,
+      "beta": 1,
+      "beta1": 1,
+      "mu": 1,
+      "mu1": 1,
+      "exponent": 2,
+      "volume1": 11,
+      "volume2": 7,
+      "reactor_count": 2
+    },
+    "constraints": [
+      {
+        "coefficients": {
+          "x": 1,
+          "y": 1
+        },
+        "operator": "<=",
+        "value": 8
+      }
+    ],
+    "derived_metrics": [
+      {
+        "id": "shift-output",
+        "name": "Выход за смену",
+        "expression": "C*shift_hours",
+        "unit": "кг",
+        "parameters": {
+          "shift_hours": 8
+        },
+        "symbol": "Q"
+      }
+    ],
+    "builtin": true,
+    "objective_label": "C",
+    "objective_unit": "кг/ч"
+  },
+  {
+    "id": "mixing-cost",
+    "name": "Подбор режима смешения",
+    "description": "Минимизация взвешенного штрафа за отклонение расходов двух потоков от целевых значений: x_target = 2 м³/ч, y_target = 3 м³/ч; веса a = 1, b = 2. Каждый расход — от 0 до 6 м³/ч, суммарный — не более 8 м³/ч.",
+    "objective": "a*(x-x_target)**2 + b*(y-y_target)**2",
+    "direction": "min",
+    "variables": [
+      {
+        "name": "x",
+        "display_name": "Q₁",
+        "unit": "м³/ч",
+        "min": 0,
+        "max": 6
+      },
+      {
+        "name": "y",
+        "display_name": "Q₂",
+        "unit": "м³/ч",
+        "min": 0,
+        "max": 6
+      }
+    ],
+    "coefficients": {
+      "a": 1,
+      "b": 2,
+      "x_target": 2,
+      "y_target": 3
+    },
+    "constraints": [
+      {
+        "coefficients": {
+          "x": 1,
+          "y": 1
+        },
+        "operator": "<=",
+        "value": 8
+      }
+    ],
+    "builtin": true,
+    "objective_label": "J",
+    "objective_unit": ""
+  }
+]
