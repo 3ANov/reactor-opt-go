@@ -26,7 +26,7 @@ type Parameters struct {
 
 func DefaultParameters() Parameters {
 	return Parameters{
-		Precision:         0.01,
+		Precision:         1e-8,
 		InitialStep:       1,
 		MaxEvaluations:    10000,
 		FunctionPrecision: 1e-6,
@@ -132,7 +132,7 @@ func Methods() []Definition {
 		{
 			ID:   "nelder_mead",
 			Name: "Метод Нелдера — Мида",
-			Description: "Локальный симплексный поиск из центра, вершин и вдоль рёбер. " +
+			Description: "Локальный поиск одним симплексом из заданной точки или центра области. " +
 				"Изменения функции и координат проверяются для всех вершин соседних симплексов. " +
 				"Глобальная оптимальность не гарантируется.",
 			Defaults: defaults,

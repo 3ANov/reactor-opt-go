@@ -2,6 +2,7 @@ package optimization
 
 import (
 	"context"
+	"fmt"
 	"math"
 	"slices"
 	"sort"
@@ -50,7 +51,7 @@ func scorePoint(evaluator *evaluation, point constraints.Point, project projecto
 	return scoredPoint{score, point}, ok
 }
 
-// Infeasible 2D trials use a barrier; edge trials are projected onto their segment.
+// Infeasible 2D trials use a barrier; 1D trials stay on the feasible segment.
 func nelderMeadIteration(evaluator *evaluation, simplex []scoredPoint, project projector) []scoredPoint {
 	sortSimplex(simplex)
 	worstIndex := len(simplex) - 1
@@ -137,6 +138,10 @@ func minimizeSimplex(evaluator *evaluation, points []constraints.Point, project 
 	if len(simplex) != len(points) {
 		return false
 	}
+	if simplex[0].point == simplex[1].point ||
+		(len(simplex) == 3 && distanceFromLine(simplex[2].point, simplex[0].point, simplex[1].point) == 0) {
+		return false
+	}
 	recentStates := [][]scoredPoint{}
 	for evaluator.canIterate() {
 		sortSimplex(simplex)
@@ -170,6 +175,9 @@ func (NelderMead) Run(ctx context.Context, problem *model.Problem, parameters Pa
 	if err := parameters.Validate("nelder_mead"); err != nil {
 		return Result{}, err
 	}
+	if parameters.Start != nil && !problem.Domain.Contains(*parameters.Start) {
+		return Result{}, fmt.Errorf("Начальная точка находится вне допустимой области")
+	}
 	evaluator := newEvaluation(ctx, problem, parameters, "nelder_mead")
 	evaluator.source = "nelder_mead"
 	if evaluator.shouldStop() {
@@ -180,95 +188,67 @@ func (NelderMead) Run(ctx context.Context, problem *model.Problem, parameters Pa
 		evaluator.stop("no_feasible_region", "Допустимых решений нет")
 		return evaluator.complete()
 	}
-	evaluator.beginStage()
-	for _, vertex := range vertices {
-		if _, ok := evaluator.score(vertex); !ok {
-			break
-		}
-	}
-	evaluator.finishStage(parameters.InitialStep)
-	if evaluator.shouldStop() {
-		return evaluator.complete()
-	}
 	if len(vertices) == 1 {
-		evaluator.stop("converged", "Допустимая область состоит из одной точки")
+		evaluator.beginStage()
+		evaluator.score(vertices[0])
+		evaluator.finishStage(0)
+		if !evaluator.shouldStop() {
+			evaluator.stop("converged", "Допустимая область состоит из одной точки")
+		}
 		return evaluator.complete()
 	}
-	project := problem.Domain.Project
-	center := constraints.Point{}
+	start := constraints.Point{}
 	for _, vertex := range vertices {
-		center[0] += vertex[0] / float64(len(vertices))
-		center[1] += vertex[1] / float64(len(vertices))
+		start[0] += vertex[0] / float64(len(vertices))
+		start[1] += vertex[1] / float64(len(vertices))
 	}
-	allConverged := true
-	if len(vertices) > 2 {
-		wideVertex := vertices[1]
-		for _, vertex := range vertices[2:] {
-			if math.Abs(cross(center, vertices[0], vertex)) > math.Abs(cross(center, vertices[0], wideVertex)) {
-				wideVertex = vertex
-			}
-		}
-		initialSimplex := []constraints.Point{
-			project(center),
-			project(towards(center, vertices[0], parameters.InitialStep)),
-			project(towards(center, wideVertex, parameters.InitialStep)),
-		}
-		if !minimizeSimplex(evaluator, initialSimplex, nil) {
-			allConverged = false
-		}
-		for _, vertex := range vertices {
-			if !evaluator.canIterate() {
-				break
-			}
-			distantVertex := vertices[0]
-			for _, candidate := range vertices {
-				if distance(vertex, candidate) > distance(vertex, distantVertex) {
-					distantVertex = candidate
-				}
-			}
-			wideVertex = vertices[0]
-			for _, candidate := range vertices {
-				if math.Abs(cross(vertex, distantVertex, candidate)) > math.Abs(cross(vertex, distantVertex, wideVertex)) {
-					wideVertex = candidate
-				}
-			}
-			initialSimplex = []constraints.Point{
-				vertex,
-				project(towards(vertex, distantVertex, parameters.InitialStep)),
-				project(towards(vertex, wideVertex, parameters.InitialStep)),
-			}
-			if !minimizeSimplex(evaluator, initialSimplex, nil) {
-				allConverged = false
-			}
-		}
+	if parameters.Start != nil {
+		start = *parameters.Start
 	}
-	edgeCount := len(vertices)
-	if edgeCount == 2 {
-		edgeCount = 1
+	start = problem.Domain.Project(start)
+	simplex := initialSimplex(problem.Domain, vertices, start, parameters.InitialStep)
+	var project projector
+	if len(vertices) == 2 {
+		project = problem.Domain.Project
 	}
-	for i := 0; i < edgeCount; i++ {
-		if !evaluator.canIterate() {
-			break
-		}
-		edgeStart, edgeEnd := vertices[i], vertices[(i+1)%len(vertices)]
-		midpoint := interpolate(edgeStart, edgeEnd, 0.5)
-		projectToEdge := func(candidate constraints.Point) constraints.Point {
-			return project(ontoSegment(candidate, edgeStart, edgeEnd))
-		}
-		initialSegment := []constraints.Point{
-			midpoint,
-			towards(midpoint, edgeEnd, parameters.InitialStep),
-		}
-		if !minimizeSimplex(evaluator, initialSegment, projectToEdge) {
-			allConverged = false
-		}
-	}
+	converged := minimizeSimplex(evaluator, simplex, project)
 	if evaluator.canIterate() {
-		if allConverged {
+		if converged {
 			evaluator.stop("converged", convergenceReason(parameters))
 		} else {
 			evaluator.stop("stalled", "Симплексный поиск остановился до выполнения выбранного критерия")
 		}
 	}
 	return evaluator.complete()
+}
+
+func initialSimplex(domain constraints.Domain, vertices []constraints.Point, start constraints.Point, step float64) []constraints.Point {
+	if len(vertices) > 2 {
+		first := domain.Project(constraints.Point{start[0] + step, start[1]})
+		second := domain.Project(constraints.Point{start[0], start[1] + step})
+		if distanceFromLine(second, start, first) > 0 {
+			return []constraints.Point{start, first, second}
+		}
+	}
+
+	// A start on the boundary can collapse the axis-aligned triangle after projection.
+	distantVertex := vertices[0]
+	for _, vertex := range vertices[1:] {
+		if distance(start, vertex) > distance(start, distantVertex) {
+			distantVertex = vertex
+		}
+	}
+	first := domain.Project(towards(start, distantVertex, step))
+	simplex := []constraints.Point{start, first}
+	if len(vertices) == 2 {
+		return simplex
+	}
+	wideVertex := vertices[0]
+	for _, vertex := range vertices[1:] {
+		if distanceFromLine(vertex, start, first) > distanceFromLine(wideVertex, start, first) {
+			wideVertex = vertex
+		}
+	}
+	second := domain.Project(towards(start, wideVertex, step))
+	return append(simplex, second)
 }

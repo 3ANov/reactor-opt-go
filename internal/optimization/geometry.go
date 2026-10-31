@@ -27,6 +27,15 @@ func cross(origin, first, second constraints.Point) float64 {
 	return (first[0]-origin[0])*(second[1]-origin[1]) - (first[1]-origin[1])*(second[0]-origin[0])
 }
 
+func distanceFromLine(point, start, end constraints.Point) float64 {
+	length := distance(start, end)
+	if length == 0 {
+		return 0
+	}
+	dx, dy := (end[0]-start[0])/length, (end[1]-start[1])/length
+	return math.Abs(dx*(point[1]-start[1]) - dy*(point[0]-start[0]))
+}
+
 func ontoSegment(point, start, end constraints.Point) constraints.Point {
 	length := distance(start, end)
 	if length == 0 {

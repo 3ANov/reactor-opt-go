@@ -63,9 +63,9 @@ func (evaluator *evaluation) recordConvergence(change iterationChange) {
 
 func convergenceReason(parameters Parameters) string {
 	if parameters.StoppingCriterion == "function" {
-		return "Изменение функции между итерациями не превышает ε во всех локальных запусках"
+		return "Изменение функции между итерациями не превышает ε"
 	}
-	return "Изменение координат между итерациями не превышает δ во всех локальных запусках"
+	return "Изменение координат между итерациями не превышает δ"
 }
 
 type iterationConverger struct {

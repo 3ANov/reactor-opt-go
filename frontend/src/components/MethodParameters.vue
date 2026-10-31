@@ -22,8 +22,7 @@ const stoppingType = computed({
 parameters.value.stopping_criterion = stoppingType.value
 
 watch([useStart, startX, startY], () => {
-  parameters.value.start =
-    useStart.value && props.methodId !== 'nelder_mead' ? [startX.value, startY.value] : null
+  parameters.value.start = useStart.value ? [startX.value, startY.value] : null
 })
 
 function randomSeed() {
@@ -124,21 +123,21 @@ function randomSeed() {
         <button type="button" class="button small" @click="randomSeed">Случайное число</button>
         <p class="hint">Результат CMA-ES может меняться при другом начальном числе.</p>
       </template>
-      <label class="check">
-        <input v-model="useStart" type="checkbox" />
-        Задать начальную точку
-      </label>
-      <div v-if="useStart" class="form-grid">
-        <label>
-          {{ task?.variables?.[0]?.display_name || 'x' }}
-          <input v-model.number="startX" type="number" step="any" required />
-        </label>
-        <label>
-          {{ task?.variables?.[1]?.display_name || 'y' }}
-          <input v-model.number="startY" type="number" step="any" required />
-        </label>
-      </div>
     </template>
+    <label class="check">
+      <input v-model="useStart" type="checkbox" />
+      Задать начальную точку
+    </label>
+    <div v-if="useStart" class="form-grid">
+      <label>
+        {{ task?.variables?.[0]?.display_name || 'x' }}
+        <input v-model.number="startX" type="number" step="any" required />
+      </label>
+      <label>
+        {{ task?.variables?.[1]?.display_name || 'y' }}
+        <input v-model.number="startY" type="number" step="any" required />
+      </label>
+    </div>
     <details>
       <summary>Дополнительные ограничения</summary>
       <label>
