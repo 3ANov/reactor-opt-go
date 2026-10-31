@@ -6,6 +6,8 @@ Go, Wails v3, Vue 3, TypeScript и Plotly.
 Методы: Нелдера — Мида, BFGS и CMA-ES.
 Есть ограничения, библиотека задач, учётные записи и графики 2D/3D.
 
+[Скриншоты приложения](docs/screenshots/)
+
 ## Запуск из исходников
 
 Нужны Go 1.27.4, Node.js 24 и [системные зависимости Wails](https://v3.wails.io/getting-started/installation/).
