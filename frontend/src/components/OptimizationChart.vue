@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch, onMounted, onBeforeUnmount } from 'vue'
+import { computed, ref, watch, onMounted, onBeforeUnmount } from 'vue'
 import Plotly from 'plotly.js-dist-min'
 import type { Task, Result, PlotData } from '../api'
 
@@ -18,7 +18,56 @@ const error = ref('')
 let observer: ResizeObserver | undefined
 let disposed = false
 let revision = 0
+let renderedView = ''
 let pending = Promise.resolve()
+type Range = [number, number]
+type PlotElement = HTMLElement & {
+  _fullLayout?: { scene?: { _scene?: { getCamera(): Record<string, unknown> } } }
+}
+function valueRange(values: (number | null | undefined)[]): Range {
+  let min = Infinity
+  let max = -Infinity
+  for (const value of values) {
+    if (value == null || !Number.isFinite(value)) continue
+    min = Math.min(min, value)
+    max = Math.max(max, value)
+  }
+  return min <= max ? [min, max] : [-1, 1]
+}
+function paddedRange([min, max]: Range): Range {
+  const padding = (max - min) / 32 || 1
+  return [min - padding, max + padding]
+}
+// Keep axes, proportions and colors tied to the full surface when it is masked.
+const surfaceScale = computed(() => {
+  const z = props.data.z?.flatMap((row) => row || []) || []
+  const colors = valueRange(z)
+  const points = (props.history ? props.result?.history || [] : []).map((h) => [
+    h.point[0],
+    h.point[1],
+    h.value,
+  ])
+  if (props.result?.point && props.result.value !== null) {
+    points.push([props.result.point[0], props.result.point[1], props.result.value])
+  }
+  const ranges = [
+    valueRange([...(props.data.x || []), ...points.map((p) => p[0])]),
+    valueRange([...(props.data.y || []), ...points.map((p) => p[1])]),
+    valueRange([...z, ...points.map((p) => p[2])]),
+  ]
+  const spans = ranges.map(([min, max]) => max - min || 1)
+  const mean = Math.cbrt(spans[0] * spans[1] * spans[2])
+  const ratios =
+    Math.max(...spans) / Math.min(...spans) <= 4 ? spans.map((s) => s / mean) : [1, 1, 1]
+  return {
+    x: paddedRange(ranges[0]),
+    y: paddedRange(ranges[1]),
+    z: paddedRange(ranges[2]),
+    aspectratio: { x: ratios[0], y: ratios[1], z: ratios[2] },
+    cmin: colors[0] === colors[1] ? colors[0] - 0.5 : colors[0],
+    cmax: colors[0] === colors[1] ? colors[1] + 0.5 : colors[1],
+  }
+})
 function axisLabel(axis: number) {
   const variable = props.task.variables?.[axis]
   return (
@@ -49,12 +98,20 @@ async function renderPlot() {
   const zLabel =
     props.task.objective_label + (props.task.objective_unit ? ', ' + props.task.objective_unit : '')
   const surface = props.mode === '3d'
+  const scale = surfaceScale.value
+  const view = props.task.id + props.mode + revision
+  // Read the live camera so a redraw also preserves zoom between interaction events.
+  const camera =
+    surface && renderedView === view
+      ? (root.value as PlotElement)._fullLayout?.scene?._scene?.getCamera()
+      : undefined
   data.push({
     type: surface ? 'surface' : 'contour',
     x: props.data.x,
     y: props.data.y,
     z: props.feasible ? props.data.feasible_z : props.data.z,
     colorscale: 'Viridis',
+    ...(surface ? { cauto: false, cmin: scale.cmin, cmax: scale.cmax } : {}),
     connectgaps: false,
     contours: { coloring: 'heatmap', showlines: true },
     line: { width: 0.5, color: 'rgba(255,255,255,.4)' },
@@ -138,14 +195,17 @@ async function renderPlot() {
         margin: { l: 60, r: 75, b: 55, t: 15 },
         separators: ', ',
         dragmode: surface ? 'orbit' : 'pan',
-        uirevision: props.task.id + props.mode + revision,
+        uirevision: view,
         xaxis: { ...axis, title: { text: axisLabel(0) } },
         yaxis: { ...axis, title: { text: axisLabel(1) }, scaleanchor: 'x', scaleratio: 1 },
         scene: {
           bgcolor: background,
-          xaxis: { ...axis, title: { text: axisLabel(0) } },
-          yaxis: { ...axis, title: { text: axisLabel(1) } },
-          zaxis: { ...axis, title: { text: zLabel } },
+          ...(camera ? { camera } : {}),
+          aspectmode: 'manual',
+          aspectratio: scale.aspectratio,
+          xaxis: { ...axis, title: { text: axisLabel(0) }, range: scale.x, autorange: false },
+          yaxis: { ...axis, title: { text: axisLabel(1) }, range: scale.y, autorange: false },
+          zaxis: { ...axis, title: { text: zLabel }, range: scale.z, autorange: false },
         },
       },
       {
@@ -156,6 +216,7 @@ async function renderPlot() {
         showTips: false,
       },
     )
+    renderedView = view
   } catch {
     error.value = 'Не удалось построить график. Уменьшите разрешение или выберите 2D.'
   }
